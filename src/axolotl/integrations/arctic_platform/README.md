@@ -44,7 +44,7 @@ arctic_sft:
 CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml
 ```
 
-**Remote** (`backend: remote`) — `protocol: http` or `cortex`, plus `host` / `port`. YAML validates; this integration still only runs `backend: onprem`.
+**Cortex** (`backend: remote`, `protocol: cortex`) — Snowflake Cortex training. Connection comes from `ARCTIC_CORTEX_*` (or `CORTEX_PAT`). SFT is training-only; `sampling_gpus: 0` is enough unless `generate_samples: true`. `colocate` is not supported.
 
 ```yaml
 plugins:
@@ -52,14 +52,19 @@ plugins:
 
 arctic_sft:
   backend: remote
-  protocol: http
-  host: dss-gpu-host.example.com
-  port: 8765
-  training_gpus: 2
-  checkpoint_path: ./arctic_sft_ckpt
+  protocol: cortex
+  training_gpus: 1
+  sampling_gpus: 0
 ```
 
-- Worked YAML: [`sft/examples/arctic_sft.yaml`](sft/examples/arctic_sft.yaml)
+```bash
+set -a; source .cortex.env; set +a   # ARCTIC_CORTEX_HOST/DATABASE/SCHEMA/PAT
+CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml --launcher python
+```
+
+`remote` + `protocol: http` still validates in YAML and is rejected at client-build.
+
+- Worked YAML: [`sft/examples/arctic_sft.yaml`](sft/examples/arctic_sft.yaml) (on-prem), [`sft/examples/arctic_sft_cortex.yaml`](sft/examples/arctic_sft_cortex.yaml) (Cortex)
 - Every `arctic_sft:` field and default: [`sft/args.py`](sft/args.py) (`ArcticSFTConfig`)
 - Server client (`ArcticSFTClientConfig`): arctic-platform `docs/sft.md`
 
@@ -83,7 +88,7 @@ arctic_sft:
 | `export_hf` | `false` | Also write HF weights under `{checkpoint}/hf/` |
 | `gradient_checkpointing` | `false` | Server-side activation checkpointing |
 | `sampling_gpus` | `0` | `>0` enables remote sample generation (vLLM) |
-| `colocate` | `false` | Share GPUs between training and sampling |
+| `colocate` | `false` | Share GPUs between training and sampling (on-prem only; Cortex always splits jobs) |
 | `vllm_config` | `null` | Forwarded to the sampling job |
 | `training_job_id` / `sampling_job_id` | `null` | Reattach to existing jobs |
 | `startup_timeout` / `job_ready_timeout` / `request_timeout` | `600` / `1800` / `1800` | Seconds |
@@ -149,6 +154,8 @@ Do **not** blank `CUDA_VISIBLE_DEVICES` for Ray (actors need visible GPUs).
 | Client OOM / CUDA init on Axolotl                        | `CUDA_VISIBLE_DEVICES=` + `server_cuda_visible_devices`        |
 | `generate_samples` without sampling                      | Set `arctic_sft.sampling_gpus > 0`                             |
 | Port already in use                                      | Change `arctic_sft.port` or stop the leftover server           |
+| Cortex `invalid_config` / `loss_fn: sft`                 | Leave `ds_config` unset (plugin sends ZeRO-1 / sdpa). Do not set `colocate: true`. |
+| Cortex PAT missing                                       | Export `ARCTIC_CORTEX_PAT` or `CORTEX_PAT`                     |
 
 ## Layout
 
@@ -158,6 +165,7 @@ arctic_platform/
   sft/
     plugin.py        ArcticSFTPlugin
     trainer.py       ArcticSFTTrainer (remote train loop)
+    cortex.py        Cortex {args, kwargs} remap + label roll
     args.py          arctic_sft: pydantic schema
     generation.py    remote sample generation
     callbacks.py     ArcticSFTGenerationCallback

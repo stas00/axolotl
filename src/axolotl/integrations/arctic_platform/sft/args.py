@@ -33,9 +33,9 @@ class ArcticSFTConfig(BaseModel):
         json_schema_extra={
             "description": (
                 "Deployment target. onprem uses protocol http|ray; remote uses "
-                "http|cortex. This integration only constructs onprem; "
-                "backend=remote validates here and is rejected at client-build "
-                "until it is wired."
+                "http|cortex. backend=remote + protocol=cortex builds "
+                "CortexConfig from ARCTIC_CORTEX_* (or CORTEX_PAT). "
+                "backend=remote + protocol=http is not wired."
             )
         },
     )
@@ -44,7 +44,8 @@ class ArcticSFTConfig(BaseModel):
         json_schema_extra={
             "description": (
                 "Transport on that backend. onprem: http|ray. remote: "
-                "http|cortex. Mapped onto OnPremConfig.protocol."
+                "http|cortex. cortex maps onto CortexConfig; http|ray onto "
+                "OnPremConfig.protocol."
             )
         },
     )

@@ -200,6 +200,16 @@ class ArcticSFTPlugin(BasePlugin):
 
         cls._validate_micro_batch(cfg.micro_batch_size, acfg.training_gpus)
 
+        if acfg.backend == "remote" and acfg.protocol == "cortex":
+            return cls._build_cortex_client_config(cfg, acfg)
+
+        if acfg.backend != "onprem":
+            raise ValueError(
+                "arctic_sft: backend='remote' is only wired for protocol='cortex'. "
+                "Use backend='onprem' (protocol http|ray) or "
+                "backend='remote' + protocol='cortex'."
+            )
+
         # Honor explicit overrides from the arctic_sft block, else synthesize
         # server configs from the top-level axolotl knobs.
         checkpoint_path = cls._resolve_checkpoint_path(cfg, acfg)
@@ -208,12 +218,6 @@ class ArcticSFTPlugin(BasePlugin):
         ds_worker_config = acfg.ds_worker_config or cls._synth_ds_worker_config(
             cfg, acfg
         )
-
-        if acfg.backend != "onprem":
-            raise ValueError(
-                "arctic_sft: this integration only supports backend='onprem' "
-                "(protocol http|ray). backend='remote' is not wired yet."
-            )
 
         return ArcticSFTClientConfig(
             model_name=acfg.model_name or cfg.base_model,
@@ -241,6 +245,92 @@ class ArcticSFTPlugin(BasePlugin):
             ),
             sampling=SamplingConfig(vllm=acfg.vllm_config or {}),
         )
+
+    @classmethod
+    def _build_cortex_client_config(cls, cfg: DictDefault, acfg):
+        """``backend: remote`` + ``protocol: cortex`` → ``CortexConfig``.
+
+        Cortex rejects the on-prem synth (ZeRO-2, ``torch_adam``, FA2,
+        ``offload_*: {device: none}``). Defaults match a passing Cortex SFT
+        job: ZeRO-1, sdpa, ``model_provider=huggingface``.
+        """
+        from .deps import require_arctic_sft_client
+
+        _, ArcticSFTClientConfig = require_arctic_sft_client()
+        from arctic_platform.client.config import SamplingConfig
+        from arctic_platform.client.config import TrainingConfig
+
+        ds_config = acfg.ds_config or cls._synth_cortex_ds_config(cfg, acfg)
+        ds_worker_config = acfg.ds_worker_config or cls._synth_cortex_ds_worker_config(
+            cfg, acfg
+        )
+        if acfg.vllm_config:
+            sampling = SamplingConfig(vllm=acfg.vllm_config)
+        elif acfg.sampling_gpus > 0:
+            sampling = SamplingConfig(
+                vllm={
+                    "enforce_eager": True,
+                    "enable_prefix_caching": False,
+                }
+            )
+        else:
+            sampling = SamplingConfig()
+
+        return ArcticSFTClientConfig(
+            model_name=acfg.model_name or cfg.base_model,
+            seed=cfg.seed,
+            max_seq_len=cfg.sequence_len,
+            training_gpus=acfg.training_gpus,
+            sampling_gpus=acfg.sampling_gpus,
+            job_ready_timeout=acfg.job_ready_timeout,
+            request_timeout=acfg.request_timeout,
+            training_job_id=acfg.training_job_id,
+            sampling_job_id=acfg.sampling_job_id,
+            backend=cls._build_cortex_backend(acfg),
+            training=TrainingConfig(
+                checkpoint_path=cls._resolve_checkpoint_path(cfg, acfg),
+                ds_config=ds_config,
+                ds_worker_config=ds_worker_config,
+            ),
+            sampling=sampling,
+        )
+
+    @staticmethod
+    def _build_cortex_backend(acfg):
+        import os
+
+        from arctic_platform.client.config import CortexConfig
+
+        if acfg.colocate:
+            raise ValueError(
+                "arctic_sft: Cortex does not support colocate=true "
+                "(training and sampling are always separate sub-jobs)."
+            )
+        kwargs: dict = {}
+        if acfg.host and acfg.host not in ("localhost", "127.0.0.1"):
+            kwargs["host"] = acfg.host
+        pat = os.environ.get("ARCTIC_CORTEX_PAT") or os.environ.get("CORTEX_PAT")
+        if pat:
+            kwargs["pat"] = pat
+        return CortexConfig(**kwargs)
+
+    @staticmethod
+    def _synth_cortex_ds_config(cfg: DictDefault, acfg) -> dict:
+        ds_config = ArcticSFTPlugin._synth_ds_config(cfg, acfg)
+        # ZeRO-2 + explicit no-op offload + torch_adam is an on-prem shape.
+        # Cortex returns invalid_config (and CPUAdam vs GPU param mismatches).
+        ds_config["zero_optimization"] = {"stage": 1, "reduce_scatter": True}
+        params = (ds_config.get("optimizer") or {}).get("params")
+        if isinstance(params, dict):
+            params.pop("torch_adam", None)
+        return ds_config
+
+    @staticmethod
+    def _synth_cortex_ds_worker_config(cfg: DictDefault, acfg) -> dict:
+        worker = ArcticSFTPlugin._synth_ds_worker_config(cfg, acfg)
+        worker["attn_implementation"] = cfg.attn_implementation or "sdpa"
+        worker["model_provider"] = "huggingface"
+        return worker
 
     @staticmethod
     def _validate_micro_batch(micro_batch_size: int, training_gpus: int) -> None:

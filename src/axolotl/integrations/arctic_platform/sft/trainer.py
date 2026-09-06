@@ -160,11 +160,17 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 "logits_optimization_peak_mem_size_in_gib": self._arctic_logits_optimization_peak_mem_gib,
             }
 
-        return {
+        wire = {
             "batch": microbatches,
             "meta": meta,
             "processing": processing,
         }
+        backend = getattr(getattr(self, "_arctic_client_config", None), "backend", None)
+        if getattr(backend, "protocol", None) == "cortex":
+            from .cortex import to_cortex_sft_payload
+
+            return to_cortex_sft_payload(wire)
+        return wire
 
     def _resolve_schedule(self, num_batches: int) -> tuple[int, int, int]:
         """``(grad_accum, num_train_epochs, max_steps)``.
@@ -254,7 +260,7 @@ class ArcticSFTTrainer(AxolotlTrainer):
                 self.args, self.state, self.control
             )
 
-            from arctic_platform.sft import merge_sft_step_metrics
+            from arctic_platform.client.sft import merge_sft_step_metrics
 
             wire = self._build_wire_batch(pending)
             out = client.fwd_bwd(wire)
