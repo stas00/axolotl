@@ -300,12 +300,48 @@ class TestBuildClientConfig:
         client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
         assert client_cfg.backend.protocol == "ray"
 
-    def test_remote_backend_not_wired(self):
+    def test_remote_http_backend_not_wired(self):
         cfg = self._cfg(backend="remote", protocol="http")
         with pytest.raises(
             ValueError,
-            match=r"this integration only supports backend='onprem'.*backend='remote' is not wired",
+            match=r"backend='remote' is only wired for protocol='cortex'",
         ):
+            ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+
+    def test_cortex_backend_from_env(self, monkeypatch):
+        monkeypatch.setenv("ARCTIC_CORTEX_HOST", "acct.snowflakecomputing.com")
+        monkeypatch.setenv("ARCTIC_CORTEX_DATABASE", "db")
+        monkeypatch.setenv("ARCTIC_CORTEX_SCHEMA", "sch")
+        monkeypatch.setenv("ARCTIC_CORTEX_PAT", "pat-value")
+        cfg = self._cfg(backend="remote", protocol="cortex")
+        cfg.optimizer = "adamw_torch"
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        assert client_cfg.backend.type == "remote"
+        assert client_cfg.backend.protocol == "cortex"
+        assert client_cfg.backend.colocate is False
+        assert client_cfg.backend.host == "acct.snowflakecomputing.com"
+        ds = client_cfg.training.ds_config
+        assert ds["zero_optimization"] == {"stage": 1, "reduce_scatter": True}
+        assert "offload_optimizer" not in ds["zero_optimization"]
+        assert "torch_adam" not in (ds.get("optimizer") or {}).get("params", {})
+        worker = client_cfg.training.ds_worker_config
+        assert worker["attn_implementation"] == "sdpa"
+        assert worker["model_provider"] == "huggingface"
+
+    def test_cortex_accepts_legacy_cortex_pat(self, monkeypatch):
+        monkeypatch.setenv("ARCTIC_CORTEX_HOST", "acct.snowflakecomputing.com")
+        monkeypatch.setenv("ARCTIC_CORTEX_DATABASE", "db")
+        monkeypatch.setenv("ARCTIC_CORTEX_SCHEMA", "sch")
+        monkeypatch.setenv("CORTEX_PAT", "legacy-pat")
+        monkeypatch.delenv("ARCTIC_CORTEX_PAT", raising=False)
+        cfg = self._cfg(backend="remote", protocol="cortex")
+        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
+        assert client_cfg.backend.pat.get_secret_value() == "legacy-pat"
+
+    def test_cortex_rejects_colocate(self, monkeypatch):
+        monkeypatch.setenv("ARCTIC_CORTEX_BASE_URL", "http://mock")
+        cfg = self._cfg(backend="remote", protocol="cortex", colocate=True)
+        with pytest.raises(ValueError, match="does not support colocate"):
             ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
 
     def test_micro_batch_must_divide_across_gpus(self):
@@ -956,4 +992,25 @@ class TestWireBatch:
         cfg = wire["processing"]["config"]
         assert cfg["logits_optimization"] == "memory"
         assert cfg["logits_optimization_peak_mem_size_in_gib"] == 6
+
+    def test_cortex_wire_rolls_labels_and_strips_onprem_processor(self):
+        trainer = self._wire_trainer(loss_fn="sft")
+        trainer._arctic_client_config = SimpleNamespace(
+            backend=SimpleNamespace(protocol="cortex")
+        )
+        wire = trainer._build_wire_batch(
+            [
+                {
+                    "input_ids": torch.tensor([[10, 11, 12, 13]]),
+                    "attention_mask": torch.tensor([[1, 1, 1, 0]]),
+                    "labels": torch.tensor([[-100, 11, 12, -100]]),
+                }
+            ]
+        )
+        assert wire["processing"] is None
+        assert wire["meta"] is None
+        assert wire["args"] == ()
+        labels = wire["kwargs"]["labels"]
+        assert torch.equal(labels, torch.tensor([[11, 12, -100, -100]]))
+        assert wire["kwargs"]["use_cache"] is False
 

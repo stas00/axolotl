@@ -1,0 +1,46 @@
+# SFT via Snowflake Cortex (ArcticSFTClient + CortexConfig).
+#
+# The axolotl process stays CPU-only. Connection is ARCTIC_CORTEX_*
+# (or CORTEX_PAT). SFT does not need sampling GPUs.
+#
+#   set -a; source .cortex.env; set +a
+#   CUDA_VISIBLE_DEVICES= axolotl train \
+#     src/axolotl/integrations/arctic_platform/sft/examples/arctic_sft_cortex.yaml \
+#     --launcher python
+
+base_model: Qwen/Qwen3-0.6B
+
+plugins:
+  - axolotl.integrations.arctic_platform.sft.ArcticSFTPlugin
+
+arctic_sft:
+  backend: remote
+  protocol: cortex
+  training_gpus: 1
+  sampling_gpus: 0
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    split: train[:32]
+    type: alpaca
+
+sequence_len: 256
+# Cortex default attn is sdpa (FA2 is rejected).
+attn_implementation: sdpa
+
+learning_rate: 1.0e-5
+optimizer: adamw_torch
+lr_scheduler: constant
+warmup_steps: 0
+
+num_epochs: 1
+max_steps: 15
+micro_batch_size: 1            # must be a multiple of training_gpus
+gradient_accumulation_steps: 1
+logging_steps: 1
+generate_samples: false
+
+output_dir: ./outputs/arctic-sft-cortex
+save_strategy: "no"
+eval_strategy: "no"
+report_to: none
