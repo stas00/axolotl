@@ -44,7 +44,7 @@ arctic_sft:
 CUDA_VISIBLE_DEVICES= axolotl train path/to/your_config.yaml
 ```
 
-**Cortex** (`backend: remote`, `protocol: cortex`) — Snowflake Cortex training. Connection comes from `ARCTIC_CORTEX_*` (or `CORTEX_PAT`). SFT is training-only; `sampling_gpus: 0` is enough unless `generate_samples: true`. `colocate` is not supported.
+**Cortex** (`backend: remote`, `protocol: cortex`) — Snowflake Cortex training. Connection comes from `ARCTIC_CORTEX_*` (including `ARCTIC_CORTEX_PAT`). SFT is training-only; `sampling_gpus: 0` is enough unless `generate_samples: true`. `colocate` is not supported.
 
 ```yaml
 plugins:
@@ -155,7 +155,7 @@ Do **not** blank `CUDA_VISIBLE_DEVICES` for Ray (actors need visible GPUs).
 | `generate_samples` without sampling                      | Set `arctic_sft.sampling_gpus > 0`                             |
 | Port already in use                                      | Change `arctic_sft.port` or stop the leftover server           |
 | Cortex `invalid_config` / `loss_fn: sft`                 | Leave `ds_config` unset (plugin sends ZeRO-1 / sdpa). Do not set `colocate: true`. |
-| Cortex PAT missing                                       | Export `ARCTIC_CORTEX_PAT` or `CORTEX_PAT`                     |
+| Cortex PAT missing                                       | Export `ARCTIC_CORTEX_PAT`                                     |
 
 ## Layout
 

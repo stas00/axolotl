@@ -1,7 +1,7 @@
 # SFT via Snowflake Cortex (ArcticSFTClient + CortexConfig).
 #
 # The axolotl process stays CPU-only. Connection is ARCTIC_CORTEX_*
-# (or CORTEX_PAT). SFT does not need sampling GPUs.
+# (`ARCTIC_CORTEX_PAT`). SFT does not need sampling GPUs.
 #
 #   set -a; source .cortex.env; set +a
 #   CUDA_VISIBLE_DEVICES= axolotl train \

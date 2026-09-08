@@ -34,7 +34,7 @@ class ArcticSFTConfig(BaseModel):
             "description": (
                 "Deployment target. onprem uses protocol http|ray; remote uses "
                 "http|cortex. backend=remote + protocol=cortex builds "
-                "CortexConfig from ARCTIC_CORTEX_* (or CORTEX_PAT). "
+                "CortexConfig from ARCTIC_CORTEX_* (including ARCTIC_CORTEX_PAT). "
                 "backend=remote + protocol=http is not wired."
             )
         },

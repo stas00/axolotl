@@ -328,16 +328,6 @@ class TestBuildClientConfig:
         assert worker["attn_implementation"] == "sdpa"
         assert worker["model_provider"] == "huggingface"
 
-    def test_cortex_accepts_legacy_cortex_pat(self, monkeypatch):
-        monkeypatch.setenv("ARCTIC_CORTEX_HOST", "acct.snowflakecomputing.com")
-        monkeypatch.setenv("ARCTIC_CORTEX_DATABASE", "db")
-        monkeypatch.setenv("ARCTIC_CORTEX_SCHEMA", "sch")
-        monkeypatch.setenv("CORTEX_PAT", "legacy-pat")
-        monkeypatch.delenv("ARCTIC_CORTEX_PAT", raising=False)
-        cfg = self._cfg(backend="remote", protocol="cortex")
-        client_cfg = ArcticSFTPlugin._build_client_config(cfg, cfg.arctic_sft)
-        assert client_cfg.backend.pat.get_secret_value() == "legacy-pat"
-
     def test_cortex_rejects_colocate(self, monkeypatch):
         monkeypatch.setenv("ARCTIC_CORTEX_BASE_URL", "http://mock")
         cfg = self._cfg(backend="remote", protocol="cortex", colocate=True)

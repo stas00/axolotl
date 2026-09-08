@@ -297,8 +297,6 @@ class ArcticSFTPlugin(BasePlugin):
 
     @staticmethod
     def _build_cortex_backend(acfg):
-        import os
-
         from arctic_platform.client.config import CortexConfig
 
         if acfg.colocate:
@@ -309,9 +307,6 @@ class ArcticSFTPlugin(BasePlugin):
         kwargs: dict = {}
         if acfg.host and acfg.host not in ("localhost", "127.0.0.1"):
             kwargs["host"] = acfg.host
-        pat = os.environ.get("ARCTIC_CORTEX_PAT") or os.environ.get("CORTEX_PAT")
-        if pat:
-            kwargs["pat"] = pat
         return CortexConfig(**kwargs)
 
     @staticmethod
