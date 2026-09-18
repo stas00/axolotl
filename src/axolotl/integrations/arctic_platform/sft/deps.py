@@ -28,8 +28,19 @@ def require_arctic_platform():
 
 
 def require_arctic_sft_client():
-    """Import ``ArcticSFTClient`` / ``ArcticSFTClientConfig`` or raise helpfully."""
+    """Import ``ArcticSFTClient`` / ``ArcticSFTClientConfig`` or raise helpfully.
+
+    Prefer ``arctic_platform.client.sft`` so a Cortex CPU client does not need
+    the ``[sft]`` DeepSpeed extra. Fall back to ``arctic_platform.sft``.
+    """
     require_arctic_platform()
+    try:
+        from arctic_platform.client.sft import ArcticSFTClient
+        from arctic_platform.client.sft import ArcticSFTClientConfig
+
+        return ArcticSFTClient, ArcticSFTClientConfig
+    except ImportError:
+        pass
     try:
         from arctic_platform.sft import ArcticSFTClient
         from arctic_platform.sft import ArcticSFTClientConfig
